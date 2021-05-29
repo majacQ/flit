@@ -9,10 +9,10 @@ import sys
 from typing import Optional
 
 from flit_core import common
-from .inifile import ConfigError
+from .config import ConfigError
 from .log import enable_colourful_output
 
-__version__ = '2.3.0'
+__version__ = '3.2.0'
 
 log = logging.getLogger(__name__)
 
@@ -125,15 +125,6 @@ def main(argv=None):
              "--extras=all can be useful in combination with --deps=production, --deps=none precludes using --extras"
     )
 
-    # flit installfrom (deprecated) ---------------------------------------
-    parser_installfrom = subparsers.add_parser('installfrom',
-       help="Download and install a package using flit from source"
-    )
-    parser_installfrom.add_argument('location',
-        help="A URL to download, or a shorthand like github:takluyver/flit"
-    )
-    add_shared_install_options(parser_installfrom)
-
     # flit init --------------------------------------------
     parser_init = subparsers.add_parser('init',
         help="Prepare pyproject.toml for a new package"
@@ -141,19 +132,12 @@ def main(argv=None):
 
     args = ap.parse_args(argv)
 
-    cf = args.ini_file
-    if (
-        args.subcmd not in {'init', 'installfrom'}
-        and cf == pathlib.Path('pyproject.toml')
-        and not cf.is_file()
-    ):
-        # Fallback to flit.ini if it's present
-        cf_ini = pathlib.Path('flit.ini')
-        if cf_ini.is_file():
-            args.ini_file = cf_ini
-        else:
-            sys.exit('Neither pyproject.toml nor flit.ini found, '
-                     'and no other config file path specified')
+    if args.ini_file.suffix == '.ini':
+        sys.exit("flit.ini format is no longer supported. You can use "
+                 "'python3 -m flit.tomlify' to convert it to pyproject.toml")
+
+    if args.subcmd not in {'init'} and not args.ini_file.is_file():
+        sys.exit('Config file {} does not exist'.format(args.ini_file))
 
     enable_colourful_output(logging.DEBUG if args.debug else logging.INFO)
 
@@ -188,14 +172,7 @@ def main(argv=None):
                       pth=args.pth_file).install()
         except (ConfigError, PythonNotFoundError, common.NoDocstringError, common.NoVersionError) as e:
             sys.exit(e.args[0])
-    elif args.subcmd == 'installfrom':
-        log.warning("'flit installfrom' is deprecated: use a recent version of pip instead")
-        from .installfrom import installfrom
-        try:
-            python = find_python_executable(args.python)
-        except PythonNotFoundError as e:
-            sys.exit(e.args[0])
-        sys.exit(installfrom(args.location, user=args.user, python=python))
+
     elif args.subcmd == 'init':
         from .init import TerminalIniter
         TerminalIniter().initialise()

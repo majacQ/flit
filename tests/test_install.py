@@ -1,3 +1,4 @@
+import json
 import os
 import pathlib
 import sys
@@ -10,8 +11,10 @@ from testpath import assert_isfile, assert_isdir, assert_islink, MockCommand
 
 from flit import install
 from flit.install import Installer, _requires_dist_to_pip_requirement, DependencyError
+import flit_core.tests
 
 samples_dir = pathlib.Path(__file__).parent / 'samples'
+core_samples_dir = pathlib.Path(flit_core.tests.__file__).parent / 'samples'
 
 class InstallTests(TestCase):
     def setUp(self):
@@ -27,47 +30,103 @@ class InstallTests(TestCase):
     def tearDown(self):
         self.get_dirs_patch.stop()
 
+    def _assert_direct_url(self, directory, package, version, expected_editable):
+        direct_url_file = (
+            self.tmpdir
+            / 'site-packages'
+            / '{}-{}.dist-info'.format(package, version)
+            / 'direct_url.json'
+        )
+        assert_isfile(direct_url_file)
+        with direct_url_file.open() as f:
+            direct_url = json.load(f)
+            assert direct_url['url'].startswith('file:///')
+            assert direct_url['url'] == directory.as_uri()
+            assert direct_url['dir_info'].get('editable') is expected_editable
+
     def test_install_module(self):
-        Installer.from_ini_path(samples_dir / 'module1_ini' / 'flit.ini').install_directly()
+        Installer.from_ini_path(samples_dir / 'module1_toml' / 'pyproject.toml').install_directly()
         assert_isfile(self.tmpdir / 'site-packages' / 'module1.py')
         assert_isdir(self.tmpdir / 'site-packages' / 'module1-0.1.dist-info')
+        self._assert_direct_url(
+            samples_dir / 'module1_toml', 'module1', '0.1', expected_editable=False
+        )
+
+    def test_install_module_pep621(self):
+        Installer.from_ini_path(
+            core_samples_dir / 'pep621_nodynamic' / 'pyproject.toml',
+        ).install_directly()
+        assert_isfile(self.tmpdir / 'site-packages' / 'module1.py')
+        assert_isdir(self.tmpdir / 'site-packages' / 'module1-0.3.dist-info')
+        self._assert_direct_url(
+            core_samples_dir / 'pep621_nodynamic', 'module1', '0.3',
+            expected_editable=False
+        )
 
     def test_install_package(self):
-        Installer.from_ini_path(samples_dir / 'package1' / 'flit.ini').install_directly()
+        oldcwd = os.getcwd()
+        os.chdir(str(samples_dir / 'package1'))
+        try:
+            Installer.from_ini_path(pathlib.Path('pyproject.toml')).install_directly()
+        finally:
+            os.chdir(oldcwd)
         assert_isdir(self.tmpdir / 'site-packages' / 'package1')
         assert_isdir(self.tmpdir / 'site-packages' / 'package1-0.1.dist-info')
         assert_isfile(self.tmpdir / 'scripts' / 'pkg_script')
         with (self.tmpdir / 'scripts' / 'pkg_script').open() as f:
             assert f.readline().strip() == "#!" + sys.executable
+        self._assert_direct_url(
+            samples_dir / 'package1', 'package1', '0.1', expected_editable=False
+        )
 
     def test_symlink_package(self):
         if os.name == 'nt':
             raise SkipTest("symlink")
-        Installer.from_ini_path(samples_dir / 'package1' / 'flit.ini', symlink=True).install()
+        Installer.from_ini_path(samples_dir / 'package1' / 'pyproject.toml', symlink=True).install()
         assert_islink(self.tmpdir / 'site-packages' / 'package1',
                       to=samples_dir / 'package1' / 'package1')
         assert_isfile(self.tmpdir / 'scripts' / 'pkg_script')
         with (self.tmpdir / 'scripts' / 'pkg_script').open() as f:
             assert f.readline().strip() == "#!" + sys.executable
+        self._assert_direct_url(
+            samples_dir / 'package1', 'package1', '0.1', expected_editable=True
+        )
+
+    def test_symlink_module_pep621(self):
+        if os.name == 'nt':
+            raise SkipTest("symlink")
+        Installer.from_ini_path(
+            core_samples_dir / 'pep621_nodynamic' / 'pyproject.toml', symlink=True
+        ).install_directly()
+        assert_islink(self.tmpdir / 'site-packages' / 'module1.py',
+                      to=core_samples_dir / 'pep621_nodynamic' / 'module1.py')
+        assert_isdir(self.tmpdir / 'site-packages' / 'module1-0.3.dist-info')
+        self._assert_direct_url(
+            core_samples_dir / 'pep621_nodynamic', 'module1', '0.3',
+            expected_editable=True
+        )
 
     def test_pth_package(self):
-        Installer.from_ini_path(samples_dir / 'package1' / 'flit.ini', pth=True).install()
+        Installer.from_ini_path(samples_dir / 'package1' / 'pyproject.toml', pth=True).install()
         assert_isfile(self.tmpdir / 'site-packages' / 'package1.pth')
         with open(str(self.tmpdir / 'site-packages' / 'package1.pth')) as f:
             assert f.read() == str(samples_dir / 'package1')
         assert_isfile(self.tmpdir / 'scripts' / 'pkg_script')
+        self._assert_direct_url(
+            samples_dir / 'package1', 'package1', '0.1', expected_editable=True
+        )
 
     def test_dist_name(self):
-        Installer.from_ini_path(samples_dir / 'altdistname' / 'flit.ini').install_directly()
+        Installer.from_ini_path(samples_dir / 'altdistname' / 'pyproject.toml').install_directly()
         assert_isdir(self.tmpdir / 'site-packages' / 'package1')
         assert_isdir(self.tmpdir / 'site-packages' / 'package_dist1-0.1.dist-info')
 
     def test_entry_points(self):
-        Installer.from_ini_path(samples_dir / 'entrypoints_valid' / 'flit.ini').install_directly()
+        Installer.from_ini_path(samples_dir / 'entrypoints_valid' / 'pyproject.toml').install_directly()
         assert_isfile(self.tmpdir / 'site-packages' / 'package1-0.1.dist-info' / 'entry_points.txt')
 
     def test_pip_install(self):
-        ins = Installer.from_ini_path(samples_dir / 'package1' / 'flit.ini', python='mock_python',
+        ins = Installer.from_ini_path(samples_dir / 'package1' / 'pyproject.toml', python='mock_python',
                         user=False)
 
         with MockCommand('mock_python') as mock_py:
@@ -77,7 +136,7 @@ class InstallTests(TestCase):
         assert len(calls) == 1
         cmd = calls[0]['argv']
         assert cmd[1:4] == ['-m', 'pip', 'install']
-        assert cmd[4].endswith('package1-0.1-py2.py3-none-any.whl')
+        assert cmd[4].endswith('package1')
 
     def test_symlink_other_python(self):
         if os.name == 'nt':
@@ -103,7 +162,7 @@ class InstallTests(TestCase):
                            scripts=str(self.tmpdir / 'scripts2'))
 
         with MockCommand('mock_python', content=script1):
-            ins = Installer.from_ini_path(samples_dir / 'package1' / 'flit.ini', python='mock_python',
+            ins = Installer.from_ini_path(samples_dir / 'package1' / 'pyproject.toml', python='mock_python',
                       symlink=True)
         with MockCommand('mock_python', content=script2):
             ins.install()
@@ -123,6 +182,15 @@ class InstallTests(TestCase):
         calls = mockpy.get_calls()
         assert len(calls) == 1
         assert calls[0]['argv'][1:5] == ['-m', 'pip', 'install', '-r']
+
+    def test_install_reqs_my_python_if_needed_pep621(self):
+        ins = Installer.from_ini_path(
+            core_samples_dir / 'pep621_nodynamic' / 'pyproject.toml',
+            deps='none',
+        )
+
+        # This shouldn't try to get version & docstring from the module
+        ins.install_reqs_my_python_if_needed()
 
     def test_extras_error(self):
         with pytest.raises(DependencyError):

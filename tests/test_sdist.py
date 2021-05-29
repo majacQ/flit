@@ -24,7 +24,7 @@ def test_make_sdist():
     # Smoke test of making a complete sdist
     if not which('git'):
         pytest.skip("requires git")
-    builder = sdist.SdistBuilder.from_ini_path(samples_dir / 'package1' / 'flit.ini')
+    builder = sdist.SdistBuilder.from_ini_path(samples_dir / 'package1' / 'pyproject.toml')
     with TemporaryDirectory() as td:
         td = Path(td)
         builder.build(td)
@@ -39,7 +39,7 @@ def test_sdist_no_setup_py():
     # Smoke test of making a complete sdist
     if not which('git'):
         pytest.skip("requires git")
-    builder = sdist.SdistBuilder.from_ini_path(samples_dir / 'package1' / 'flit.ini')
+    builder = sdist.SdistBuilder.from_ini_path(samples_dir / 'package1' / 'pyproject.toml')
     with TemporaryDirectory() as td:
         td = Path(td)
         builder.build(td, gen_setup_py=False)
@@ -55,20 +55,31 @@ LIST_FILES = """\
 import sys
 from os.path import join
 if '--deleted' not in sys.argv:
-    print('foo')
-    print(join('dir1', 'bar'))
-    print(join('dir1', 'subdir', 'qux'))
-    print(join('dir2', 'abc'))
-    print(join('dist', 'def'))
-""".format(python=sys.executable)
+    files = [
+        'foo',
+        join('dir1', 'bar'),
+        join('dir1', 'subdir', 'qux'),
+        join('dir2', 'abc'),
+        join('dist', 'def'),
+    ]
+    mode = '{vcs}'
+    if mode == 'git':
+        print('\\0'.join(files), end='\\0')
+    elif mode == 'hg':
+        for f in files:
+            print(f)
+"""
+
+LIST_FILES_GIT = LIST_FILES.format(python=sys.executable, vcs='git')
+LIST_FILES_HG = LIST_FILES.format(python=sys.executable, vcs='hg')
 
 
 def test_get_files_list_git(copy_sample):
-    td = copy_sample('module1_ini')
+    td = copy_sample('module1_toml')
     (td / '.git').mkdir()
 
-    builder = sdist.SdistBuilder.from_ini_path(td / 'flit.ini')
-    with MockCommand('git', LIST_FILES):
+    builder = sdist.SdistBuilder.from_ini_path(td / 'pyproject.toml')
+    with MockCommand('git', LIST_FILES_GIT):
         files = builder.select_files()
 
     assert set(files) == {
@@ -78,10 +89,10 @@ def test_get_files_list_git(copy_sample):
 
 def test_get_files_list_hg(tmp_path):
     dir1 = tmp_path / 'dir1'
-    copytree(str(samples_dir / 'module1_ini'), str(dir1))
+    copytree(str(samples_dir / 'module1_toml'), str(dir1))
     (tmp_path / '.hg').mkdir()
-    builder = sdist.SdistBuilder.from_ini_path(dir1 / 'flit.ini')
-    with MockCommand('hg', LIST_FILES):
+    builder = sdist.SdistBuilder.from_ini_path(dir1 / 'pyproject.toml')
+    with MockCommand('hg', LIST_FILES_HG):
         files = builder.select_files()
 
     assert set(files) == {
@@ -98,7 +109,7 @@ def get_setup_assigns(setup):
     return ns
 
 def test_make_setup_py():
-    builder = sdist.SdistBuilder.from_ini_path(samples_dir / 'package1' / 'flit.ini')
+    builder = sdist.SdistBuilder.from_ini_path(samples_dir / 'package1' / 'pyproject.toml')
     ns = get_setup_assigns(builder.make_setup_py())
     assert ns['packages'] == ['package1', 'package1.subpkg', 'package1.subpkg2']
     assert 'install_requires' not in ns

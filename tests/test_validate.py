@@ -145,6 +145,26 @@ def test_download_and_cache_classifiers(monkeypatch, tmp_path):
     assert classifiers == {"A", "B", "C"}
 
 
+def test_validate_classifiers_private(monkeypatch):
+    """
+    Test that `Private :: Do Not Upload` considered a valid classifier.
+    This is a special case because it is not listed in a trove classifier
+    but it is a way to make sure that a private package is not get uploaded
+    on PyPI by accident.
+
+    Implementation on PyPI side:
+        https://github.com/pypa/warehouse/pull/5440
+    Issue about officially documenting the trick:
+        https://github.com/pypa/packaging.python.org/issues/643
+    """
+    monkeypatch.setattr(fv, "_read_classifiers_cached", lambda: set())
+
+    actual = fv.validate_classifiers({'invalid'})
+    assert actual == ["Unrecognised classifier: 'invalid'"]
+
+    assert fv.validate_classifiers({'Private :: Do Not Upload'}) == []
+
+
 @responses.activate
 @pytest.mark.parametrize("error", [PermissionError, OSError(errno.EROFS, "")])
 def test_download_and_cache_classifiers_with_unacessible_dir(monkeypatch, error):
@@ -181,3 +201,42 @@ def test_verify_classifiers_invalid_classifiers():
     problems = fv._verify_classifiers(classifiers, valid_classifiers)
 
     assert problems == ["Unrecognised classifier: 'B'"]
+
+def test_validate_readme_rst():
+    metadata = {
+        'description_content_type': 'text/x-rst',
+        'description': "Invalid ``rst'",
+    }
+    problems = fv.validate_readme_rst(metadata)
+
+    assert len(problems) == 2  # 1 message that rst is invalid + 1 with details
+    assert "valid rst" in problems[0]
+
+    # Markdown should be ignored
+    metadata = {
+        'description_content_type': 'text/markdown',
+        'description': "Invalid `rst'",
+    }
+    problems = fv.validate_readme_rst(metadata)
+
+    assert problems == []
+
+RST_WITH_CODE = """
+Code snippet:
+
+.. code-block:: python
+
+   a = [i ** 2 for i in range(5)]
+"""
+
+def test_validate_readme_rst_code():
+    # Syntax highlighting shouldn't require pygments
+    metadata = {
+        'description_content_type': 'text/x-rst',
+        'description': RST_WITH_CODE,
+    }
+    problems = fv.validate_readme_rst(metadata)
+    for p in problems:
+        print(p)
+
+    assert problems == []

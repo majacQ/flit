@@ -4,6 +4,7 @@ import logging
 import os
 import os.path as osp
 import csv
+import json
 import pathlib
 import random
 import shutil
@@ -14,7 +15,7 @@ from subprocess import check_call, check_output
 import sysconfig
 
 from flit_core import common
-from . import inifile
+from .config import read_flit_config
 from .wheel import WheelBuilder
 from ._get_dirs import get_dirs
 
@@ -104,7 +105,7 @@ class Installer(object):
         if deps == 'none' and extras:
             raise DependencyError()
 
-        self.module = common.Module(self.ini_info.module, str(directory))
+        self.module = common.Module(self.ini_info.module, directory)
 
         if (hasattr(os, 'getuid') and (os.getuid() == 0) and
                 (not os.environ.get('FLIT_ROOT_INSTALL'))):
@@ -121,7 +122,7 @@ class Installer(object):
     @classmethod
     def from_ini_path(cls, ini_path, user=None, python=sys.executable,
                       symlink=False, deps='all', extras=(), pth=False):
-        ini_info = inifile.read_flit_config(ini_path)
+        ini_info = read_flit_config(ini_path)
         return cls(ini_path.parent, ini_info, user=user, python=python,
                    symlink=symlink, deps=deps, extras=extras, pth=pth)
 
@@ -171,12 +172,14 @@ class Installer(object):
     def install_scripts(self, script_defs, scripts_dir):
         for name, ep in script_defs.items():
             module, func = common.parse_entry_point(ep)
+            import_name = func.split('.')[0]
             script_file = pathlib.Path(scripts_dir) / name
             log.info('Writing script to %s', script_file)
             with script_file.open('w', encoding='utf-8') as f:
                 f.write(common.script_template.format(
                     interpreter=self.python,
                     module=module,
+                    import_name=import_name,
                     func=func
                 ))
             script_file.chmod(0o755)
@@ -253,12 +256,12 @@ class Installer(object):
     def install_reqs_my_python_if_needed(self):
         """Install requirements to this environment if needed.
 
-        We can normally get the module's docstring and version number without
-        importing it, but if we do need to import it, we may need to install
+        We can normally get the summary and version number without import the
+        module, but if we do need to import it, we may need to install
         its requirements for the Python where flit is running.
         """
         try:
-            common.get_info_from_module(self.module)
+            common.get_info_from_module(self.module, self.ini_info.dynamic_metadata)
         except ImportError:
             if self.deps == 'none':
                 raise  # We were asked not to install deps, so bail out.
@@ -284,7 +287,7 @@ class Installer(object):
         os.makedirs(dirs['purelib'], exist_ok=True)
         os.makedirs(dirs['scripts'], exist_ok=True)
 
-        dst = osp.join(dirs['purelib'], osp.basename(self.module.path))
+        dst = osp.join(dirs['purelib'], self.module.path.name)
         if osp.lexists(dst):
             if osp.isdir(dst) and not osp.islink(dst):
                 shutil.rmtree(dst)
@@ -302,12 +305,12 @@ class Installer(object):
         src = str(self.module.path)
         if self.symlink:
             log.info("Symlinking %s -> %s", src, dst)
-            os.symlink(osp.abspath(self.module.path), dst)
+            os.symlink(osp.abspath(src), dst)
             self.installed_files.append(dst)
         elif self.pth:
             # .pth points to the the folder containing the module (which is
             # added to sys.path)
-            pth_target = osp.dirname(osp.abspath(self.module.path))
+            pth_target = osp.dirname(osp.abspath(src))
             pth_file = pathlib.Path(dst).with_suffix('.pth')
             log.info("Adding .pth file %s for %s", pth_file, pth_target)
             with pth_file.open("w") as f:
@@ -328,34 +331,26 @@ class Installer(object):
         self.write_dist_info(dirs['purelib'])
 
     def install_with_pip(self):
+        """Let pip install the project directory
+
+        pip will create an isolated build environment and install build
+        dependencies, which means downloading flit_core from PyPI. We ask pip
+        to install the project directory (instead of building a temporary wheel
+        and asking pip to install it), so pip will record the project directory
+        in direct_url.json.
+        """
         self.install_reqs_my_python_if_needed()
-
-        with tempfile.TemporaryDirectory() as td:
-            temp_whl = osp.join(td, 'temp.whl')
-            with open(temp_whl, 'w+b') as fp:
-                wb = WheelBuilder(
-                    str(self.directory),
-                    self.module,
-                    metadata=common.make_metadata(self.module, self.ini_info),
-                    entrypoints=self.ini_info.entrypoints,
-                    target_fp=fp,
-                )
-                wb.build()
-
-            renamed_whl = osp.join(td, wb.wheel_filename)
-            os.rename(temp_whl, renamed_whl)
-            extras = self._extras_to_install()
-            extras.discard('.none')
-            whl_with_extras = '{}[{}]'.format(renamed_whl, ','.join(extras)) \
-                if extras else renamed_whl
-
-            cmd = [self.python, '-m', 'pip', 'install', whl_with_extras]
-            if self.user:
-                cmd.append('--user')
-            if self.deps == 'none':
-                cmd.append('--no-deps')
-            shell = (os.name == 'nt')
-            check_call(cmd, shell=shell)
+        extras = self._extras_to_install()
+        extras.discard('.none')
+        req_with_extras = '{}[{}]'.format(self.directory, ','.join(extras)) \
+            if extras else str(self.directory)
+        cmd = [self.python, '-m', 'pip', 'install', req_with_extras]
+        if self.user:
+            cmd.append('--user')
+        if self.deps == 'none':
+            cmd.append('--no-deps')
+        shell = (os.name == 'nt')
+        check_call(cmd, shell=shell)
 
     def write_dist_info(self, site_pkgs):
         """Write dist-info folder, according to PEP 376"""
@@ -385,9 +380,20 @@ class Installer(object):
                 common.write_entry_points(self.ini_info.entrypoints, f)
             self.installed_files.append(dist_info / 'entry_points.txt')
 
-        with (dist_info / 'RECORD').open('w', encoding='utf-8') as f:
+        with (dist_info / 'direct_url.json').open('w', encoding='utf-8') as f:
+            json.dump(
+                {
+                    "url": self.directory.resolve().as_uri(),
+                    "dir_info": {"editable": bool(self.symlink or self.pth)}
+                },
+                f
+            )
+        self.installed_files.append(dist_info / 'direct_url.json')
+
+        # newline='' because the csv module does its own newline translation
+        with (dist_info / 'RECORD').open('w', encoding='utf-8', newline='') as f:
             cf = csv.writer(f)
-            for path in self.installed_files:
+            for path in sorted(self.installed_files, key=str):
                 path = pathlib.Path(path)
                 if path.is_symlink() or path.suffix in {'.pyc', '.pyo'}:
                     hash, size = '', ''

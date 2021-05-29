@@ -6,8 +6,7 @@ This file lives next to the module or package.
 .. note::
 
    Older version of Flit (up to 0.11) used a :doc:`flit.ini file <flit_ini>` for
-   similar information. Flit can still read these files for now, but you should
-   switch to ``pyproject.toml`` soon.
+   similar information. These files no longer work with Flit 3 and above.
 
    Run ``python3 -m flit.tomlify`` to convert a ``flit.ini`` file to
    ``pyproject.toml``.
@@ -93,6 +92,8 @@ description-file
   (``.rst``, ``.md`` or ``.txt``).
 classifiers
   A list of `Trove classifiers <https://pypi.python.org/pypi?%3Aaction=list_classifiers>`_.
+  Add ``Private :: Do Not Upload`` into the list to prevent a private package
+  from uploading on PyPI by accident.
 requires-python
   A version specifier for the versions of Python this requires, e.g. ``~=3.3`` or
   ``>=3.3,<4`` which are equivalents.
@@ -121,7 +122,7 @@ Here's the full metadata section from flit itself:
         "flit_core>=2.2.0",
         "requests",
         "docutils",
-        "pytoml",
+        "toml",
         "zipfile36; python_version in '3.3 3.4 3.5'",
     ]
     requires-python=">=3.5"

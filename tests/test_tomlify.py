@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-import pytoml
+import toml
 from shutil import copy
 from testpath import assert_isfile
 
@@ -9,7 +9,7 @@ from flit import tomlify
 samples_dir = Path(__file__).parent / 'samples'
 
 def test_tomlify(copy_sample, monkeypatch):
-    td = copy_sample('entrypoints_valid')
+    td = copy_sample('with_flit_ini')
     monkeypatch.chdir(td)
 
     tomlify.main(argv=[])
@@ -18,7 +18,7 @@ def test_tomlify(copy_sample, monkeypatch):
     assert_isfile(pyproject_toml)
 
     with pyproject_toml.open(encoding='utf-8') as f:
-        content = pytoml.load(f)
+        content = toml.load(f)
 
     assert 'build-system' in content
     assert 'tool' in content
