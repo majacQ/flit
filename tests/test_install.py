@@ -7,7 +7,9 @@ from unittest import TestCase, SkipTest
 from unittest.mock import patch
 
 import pytest
-from testpath import assert_isfile, assert_isdir, assert_islink, MockCommand
+from testpath import (
+    assert_isfile, assert_isdir, assert_islink, assert_not_path_exists, MockCommand
+)
 
 from flit import install
 from flit.install import Installer, _requires_dist_to_pip_requirement, DependencyError
@@ -79,6 +81,64 @@ class InstallTests(TestCase):
             samples_dir / 'package1', 'package1', '0.1', expected_editable=False
         )
 
+    def test_install_module_in_src(self):
+        oldcwd = os.getcwd()
+        os.chdir(samples_dir / 'packageinsrc')
+        try:
+            Installer.from_ini_path(pathlib.Path('pyproject.toml')).install_directly()
+        finally:
+            os.chdir(oldcwd)
+        assert_isfile(self.tmpdir / 'site-packages' / 'module1.py')
+        assert_isdir(self.tmpdir / 'site-packages' / 'module1-0.1.dist-info')
+
+    def test_install_ns_package_native(self):
+        Installer.from_ini_path(samples_dir / 'ns1-pkg' / 'pyproject.toml').install_directly()
+        assert_isdir(self.tmpdir / 'site-packages' / 'ns1')
+        assert_isfile(self.tmpdir / 'site-packages' / 'ns1' / 'pkg' / '__init__.py')
+        assert_not_path_exists(self.tmpdir / 'site-packages' / 'ns1' / '__init__.py')
+        assert_isdir(self.tmpdir / 'site-packages' / 'ns1_pkg-0.1.dist-info')
+
+    def test_install_ns_package_module_native(self):
+        Installer.from_ini_path(samples_dir / 'ns1-pkg-mod' / 'pyproject.toml').install_directly()
+        assert_isfile(self.tmpdir / 'site-packages' / 'ns1' / 'module.py')
+        assert_not_path_exists(self.tmpdir / 'site-packages' / 'ns1' / '__init__.py')
+
+    def test_install_ns_package_native_symlink(self):
+        if os.name == 'nt':
+            raise SkipTest('symlink')
+        Installer.from_ini_path(
+            samples_dir / 'ns1-pkg' / 'pyproject.toml', symlink=True
+        ).install_directly()
+        Installer.from_ini_path(
+            samples_dir / 'ns1-pkg2' / 'pyproject.toml', symlink=True
+        ).install_directly()
+        Installer.from_ini_path(
+            samples_dir / 'ns1-pkg-mod' / 'pyproject.toml', symlink=True
+        ).install_directly()
+        assert_isdir(self.tmpdir / 'site-packages' / 'ns1')
+        assert_isdir(self.tmpdir / 'site-packages' / 'ns1' / 'pkg')
+        assert_islink(self.tmpdir / 'site-packages' / 'ns1' / 'pkg',
+                      to=str(samples_dir / 'ns1-pkg' / 'ns1' / 'pkg'))
+        assert_isdir(self.tmpdir / 'site-packages' / 'ns1_pkg-0.1.dist-info')
+
+        assert_isdir(self.tmpdir / 'site-packages' / 'ns1' / 'pkg2')
+        assert_islink(self.tmpdir / 'site-packages' / 'ns1' / 'pkg2',
+                      to=str(samples_dir / 'ns1-pkg2' / 'ns1' / 'pkg2'))
+        assert_isdir(self.tmpdir / 'site-packages' / 'ns1_pkg2-0.1.dist-info')
+
+        assert_islink(self.tmpdir / 'site-packages' / 'ns1' / 'module.py',
+                      to=samples_dir / 'ns1-pkg-mod' / 'ns1' / 'module.py')
+        assert_isdir(self.tmpdir / 'site-packages' / 'ns1_module-0.1.dist-info')
+
+    def test_install_ns_package_pth_file(self):
+        Installer.from_ini_path(
+            samples_dir / 'ns1-pkg' / 'pyproject.toml', pth=True
+        ).install_directly()
+
+        pth_file = self.tmpdir / 'site-packages' / 'ns1.pkg.pth'
+        assert_isfile(pth_file)
+        assert pth_file.read_text('utf-8').strip() == str(samples_dir / 'ns1-pkg')
+
     def test_symlink_package(self):
         if os.name == 'nt':
             raise SkipTest("symlink")
@@ -106,6 +166,19 @@ class InstallTests(TestCase):
             expected_editable=True
         )
 
+    def test_symlink_module_in_src(self):
+        oldcwd = os.getcwd()
+        os.chdir(samples_dir / 'packageinsrc')
+        try:
+            Installer.from_ini_path(
+                pathlib.Path('pyproject.toml'), symlink=True
+            ).install_directly()
+        finally:
+            os.chdir(oldcwd)
+        assert_islink(self.tmpdir / 'site-packages' / 'module1.py',
+                      to=(samples_dir / 'packageinsrc' / 'src' / 'module1.py'))
+        assert_isdir(self.tmpdir / 'site-packages' / 'module1-0.1.dist-info')
+
     def test_pth_package(self):
         Installer.from_ini_path(samples_dir / 'package1' / 'pyproject.toml', pth=True).install()
         assert_isfile(self.tmpdir / 'site-packages' / 'package1.pth')
@@ -115,6 +188,22 @@ class InstallTests(TestCase):
         self._assert_direct_url(
             samples_dir / 'package1', 'package1', '0.1', expected_editable=True
         )
+
+    def test_pth_module_in_src(self):
+        oldcwd = os.getcwd()
+        os.chdir(samples_dir / 'packageinsrc')
+        try:
+            Installer.from_ini_path(
+                pathlib.Path('pyproject.toml'), pth=True
+            ).install_directly()
+        finally:
+            os.chdir(oldcwd)
+        pth_path = self.tmpdir / 'site-packages' / 'module1.pth'
+        assert_isfile(pth_path)
+        assert pth_path.read_text('utf-8').strip() == str(
+            samples_dir / 'packageinsrc' / 'src'
+        )
+        assert_isdir(self.tmpdir / 'site-packages' / 'module1-0.1.dist-info')
 
     def test_dist_name(self):
         Installer.from_ini_path(samples_dir / 'altdistname' / 'pyproject.toml').install_directly()

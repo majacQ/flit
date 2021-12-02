@@ -12,7 +12,7 @@ from flit_core import common
 from .config import ConfigError
 from .log import enable_colourful_output
 
-__version__ = '3.2.0'
+__version__ = '3.5.1'
 
 log = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ def find_python_executable(python: Optional[str] = None) -> str:
         return python
     # get absolute filepath of {python}
     # shutil.which may give a different result to the raw subprocess call
-    # see https://github.com/takluyver/flit/pull/300 and https://bugs.python.org/issue38905
+    # see https://github.com/pypa/flit/pull/300 and https://bugs.python.org/issue38905
     resolved_python = shutil.which(python)
     if resolved_python is None:
         raise PythonNotFoundError("Unable to resolve Python executable {!r}".format(python))
@@ -79,7 +79,14 @@ def main(argv=None):
         help="Select a format to build. Options: 'wheel', 'sdist'"
     )
 
-    parser_build.add_argument('--no-setup-py', action='store_false', dest='setup_py',
+    parser_build.add_argument('--setup-py', action='store_true',
+        help=("Generate a setup.py file in the sdist. "
+              "The sdist will work with older tools that predate PEP 517. "
+              "This is the default for now, but will change in a future version."
+              )
+    )
+
+    parser_build.add_argument('--no-setup-py', action='store_true',
         help=("Don't generate a setup.py file in the sdist. "
               "The sdist will only work with tools that support PEP 517, "
               "but the wheel will still be usable by any compatible tool."
@@ -95,15 +102,26 @@ def main(argv=None):
         help="Select a format to publish. Options: 'wheel', 'sdist'"
     )
 
-    parser_publish.add_argument('--no-setup-py', action='store_false', dest='setup_py',
+    parser_publish.add_argument('--setup-py', action='store_true',
+        help=("Generate a setup.py file in the sdist. "
+              "The sdist will work with older tools that predate PEP 517. "
+              "This is the default for now, but will change in a future version."
+              )
+    )
+
+    parser_publish.add_argument('--no-setup-py', action='store_true',
         help=("Don't generate a setup.py file in the sdist. "
               "The sdist will only work with tools that support PEP 517, "
               "but the wheel will still be usable by any compatible tool."
              )
     )
 
+    parser_publish.add_argument('--pypirc',
+        help="The .pypirc config file to be used. DEFAULT = \"~/.pypirc\""
+    )
+
     parser_publish.add_argument('--repository',
-        help="Name of the repository to upload to (must be in ~/.pypirc)"
+        help="Name of the repository to upload to (must be in the specified .pypirc file)"
     )
 
     # flit install --------------------------------------------
@@ -148,11 +166,23 @@ def main(argv=None):
         print(clogo.format(version=__version__))
         sys.exit(0)
 
+    def gen_setup_py():
+        if not (args.setup_py or args.no_setup_py):
+            log.info("Not generating setup.py in sdist (default changed)")
+            log.info(
+                "Recent versions of pip no longer need this generated file"
+            )
+            log.info(
+                "Use --[no-]setup-py to suppress this message or add setup.py"
+            )
+            return False
+        return args.setup_py
+
     if args.subcmd == 'build':
         from .build import main
         try:
             main(args.ini_file, formats=set(args.format or []),
-                 gen_setup_py=args.setup_py)
+                 gen_setup_py=gen_setup_py())
         except(common.NoDocstringError, common.VCSError, common.NoVersionError) as e:
             sys.exit(e.args[0])
     elif args.subcmd == 'publish':
@@ -160,8 +190,8 @@ def main(argv=None):
             log.warning("Passing --repository before the 'upload' subcommand is deprecated: pass it after")
         repository = args.repository or args.deprecated_repository
         from .upload import main
-        main(args.ini_file, repository, formats=set(args.format or []),
-                gen_setup_py=args.setup_py)
+        main(args.ini_file, repository, args.pypirc, formats=set(args.format or []),
+                gen_setup_py=gen_setup_py())
 
     elif args.subcmd == 'install':
         from .install import Installer

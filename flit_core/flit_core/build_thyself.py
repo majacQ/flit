@@ -17,17 +17,18 @@ from .sdist import SdistBuilder
 from . import __version__
 
 metadata_dict = {
-    'name': 'flit_core',
-    'version': __version__,
-    'author': 'Thomas Kluyver & contributors',
-    'author_email': 'thomas@kluyver.me.uk',
-    'home_page': 'https://github.com/takluyver/flit',
-    'summary': ('Distribution-building parts of Flit. '
-                    'See flit package for more information'),
-    'requires_dist': [
-        'toml',
+    "name": "flit_core",
+    "version": __version__,
+    "author": "Thomas Kluyver & contributors",
+    "author_email": "thomas@kluyver.me.uk",
+    "home_page": "https://github.com/pypa/flit",
+    "summary": (
+        "Distribution-building parts of Flit. " "See flit package for more information"
+    ),
+    "requires_dist": [
+        "tomli",
     ],
-    'requires_python': '>=3.4',
+    'requires_python': '>=3.6',
     'classifiers': [
         "License :: OSI Approved :: BSD License",
         "Topic :: Software Development :: Libraries :: Python Modules",
@@ -88,7 +89,7 @@ def build_sdist(sdist_directory, config_settings=None):
 
     sb = SdistBuilder(
         module, metadata, cwd, reqs_by_extra, entrypoints={},
-        extra_files=['pyproject.toml']
+        extra_files=['pyproject.toml', 'build_dists.py']
     )
     path = sb.build(Path(sdist_directory))
     return path.name

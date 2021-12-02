@@ -1,13 +1,67 @@
 Release history
 ===============
 
+Version 3.5.1
+-------------
+
+- Fix development installs with ``flit install --symlink`` and ``--pth-file``,
+  which were broken in 3.5.0, especially for packages using a ``src`` folder
+  (:ghpull:`472`).
+
+Version 3.5
+-----------
+
+- You can now use Flit to distribute a module or package inside a namespace
+  package (as defined by :pep:`420`). To do this, specify the import name of the
+  concrete, inner module you are packaging - e.g. ``name = "sphinxcontrib.foo"``
+  - either in the ``[project]`` table, or under ``[tool.flit.module]`` if you
+  want to use a different name on PyPI (:ghpull:`468`).
+- Flit no longer generates a ``setup.py`` file in sdists (``.tar.gz`` packages)
+  by default (:ghpull:`462`). Modern packaging tools don't need this. You can
+  use the ``--setup-py`` flag to keep adding it for now, but this will probably
+  be removed at some point in the future.
+- Fixed how ``flit init`` handles authors' names with non-ASCII characters
+  (:ghpull:`460`).
+- When ``flit init`` generates a LICENSE file, the new ``pyproject.toml`` now
+  references it (:ghpull:`467`).
+
+Version 3.4
+-----------
+
+- Python 3.6 or above is now required, both for ``flit`` and ``flit_core``.
+- Add a ``--setup-py`` option to ``flit build`` and ``flit publish``, and a
+  warning when neither this nor ``--no-setup-py`` are specified (:ghpull:`431`).
+  A future version will stop generating ``setup.py`` files in sdists by default.
+- Add support for standardised editable installs - ``pip install -e`` -
+  according to :pep:`660` (:ghpull:`400`).
+- Add a ``--pypirc`` option for ``flit publish`` to specify an alternative path
+  to a ``.pypirc`` config file describing package indexes (:ghpull:`434`).
+- Fix installing dependencies specified in a ``[project]`` table (:ghpull:`433`).
+- Fix building wheels when ``SOURCE_DATE_EPOCH`` (see :doc:`reproducible`) is
+  set to a date before 1980 (:ghpull:`448`).
+- Switch to using the `tomli <https://pypi.org/project/tomli/>`_ TOML parser,
+  in common with other packaging projects (:ghpull:`438`).
+  This supports TOML version 1.0.
+- Add a document on :doc:`bootstrap` (:ghpull:`441`).
+
+Version 3.3
+-----------
+
+- ``PKG-INFO`` files in sdists are now generated the same way as ``METADATA`` in
+  wheels, fixing some issues with sdists (:ghpull:`410`).
+- ``flit publish`` now sends SHA-256 hashes, fixing uploads to GitLab package
+  repositories (:ghpull:`416`).
+- The ``[project]`` metadata table from :pep:`621` is now fully supported and
+  :ref:`documented <pyproject_toml_project>`. Projects using this can now
+  specify ``requires = ["flit_core >=3.2,<4"]`` in the ``[build-system]`` table.
+
 Version 3.2
 -----------
 
 - Experimental support for specifying metadata in a ``[project]`` table in
   ``pyproject.toml`` as specified by :pep:`621` (:ghpull:`393`). If you try
   using this, please specify ``requires = ["flit_core >=3.2.0,<3.3"]`` in the
-  ``[build-system`` table for now, in case it needs to change for the next
+  ``[build-system]`` table for now, in case it needs to change for the next
   release.
 - Fix writing METADATA file with multi-line information in certain fields
   such as ``Author`` (:ghpull:`402`).

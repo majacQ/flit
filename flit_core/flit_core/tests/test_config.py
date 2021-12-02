@@ -15,6 +15,11 @@ def test_load_toml():
     assert inf.module == 'module1'
     assert inf.metadata['home_page'] == 'http://github.com/sirrobin/module1'
 
+def test_load_toml_ns():
+    inf = config.read_flit_config(samples_dir / 'ns1-pkg' / 'pyproject.toml')
+    assert inf.module == 'ns1.pkg'
+    assert inf.metadata['home_page'] == 'http://github.com/sirrobin/module1'
+
 def test_load_pep621():
     inf = config.read_flit_config(samples_dir / 'pep621' / 'pyproject.toml')
     assert inf.module == 'module1a'
@@ -38,6 +43,10 @@ def test_load_pep621_nodynamic():
     assert inf.metadata['version'] == '0.3'
     assert inf.metadata['summary'] == 'Statically specified description'
     assert set(inf.dynamic_metadata) == set()
+
+    # Filling reqs_by_extra when dependencies were specified but no optional
+    # dependencies was a bug.
+    assert inf.reqs_by_extra == {'.none':  ['requests >= 2.18', 'docutils']}
 
 def test_misspelled_key():
     with pytest.raises(config.ConfigError) as e_info:

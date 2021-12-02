@@ -5,7 +5,7 @@ import logging
 import os
 import os.path as osp
 from pathlib import Path
-import toml
+import tomli
 import re
 
 from .versionno import normalise_version
@@ -66,8 +66,7 @@ pep621_allowed_fields = {
 def read_flit_config(path):
     """Read and check the `pyproject.toml` file with data about the package.
     """
-    with path.open('r', encoding='utf-8') as f:
-        d = toml.load(f)
+    d = tomli.loads(path.read_text('utf-8'))
     return prep_toml_config(d, path)
 
 
@@ -288,7 +287,7 @@ def _prep_metadata(md_sect, path):
     res = LoadedConfig()
 
     res.module = md_sect.get('module')
-    if not str.isidentifier(res.module):
+    if not all([m.isidentifier() for m in res.module.split(".")]):
         raise ConfigError("Module name %r is not a valid identifier" % res.module)
 
     md_dict = res.metadata
@@ -551,7 +550,9 @@ def read_pep621_metadata(proj, path) -> LoadedConfig:
 
     if 'dependencies' in proj:
         _check_list_of_str(proj, 'dependencies')
-        md_dict['requires_dist'] = proj['dependencies']
+        reqs_noextra = proj['dependencies']
+    else:
+        reqs_noextra = []
 
     if 'optional-dependencies' in proj:
         _check_type(proj, 'optional-dependencies', dict)
@@ -566,16 +567,14 @@ def read_pep621_metadata(proj, path) -> LoadedConfig:
                     'Expected a string list for optional-dependencies ({})'.format(e)
                 )
 
-        reqs_noextra = md_dict.pop('requires_dist', [])
         lc.reqs_by_extra = optdeps.copy()
-
-        # Add optional-dependencies into requires_dist
-        md_dict['requires_dist'] = \
-            reqs_noextra + list(_expand_requires_extra(lc.reqs_by_extra))
-
         md_dict['provides_extra'] = sorted(lc.reqs_by_extra.keys())
 
-        # For internal use, record the main requirements as a '.none' extra.
+    md_dict['requires_dist'] = \
+        reqs_noextra + list(_expand_requires_extra(lc.reqs_by_extra))
+
+    # For internal use, record the main requirements as a '.none' extra.
+    if reqs_noextra:
         lc.reqs_by_extra['.none'] = reqs_noextra
 
     if 'dynamic' in proj:
